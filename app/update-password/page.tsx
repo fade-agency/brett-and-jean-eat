@@ -2,13 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
