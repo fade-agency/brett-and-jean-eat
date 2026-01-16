@@ -1,10 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, UtensilsCrossed, ChefHat } from 'lucide-react'
+import { Cuisine } from '@/types'
+
+const CUISINES: Cuisine[] = [
+  'American', 'Italian', 'Mexican', 'Chinese', 'Japanese', 
+  'Indian', 'Thai', 'Middle Eastern', 'Mediterranean', 'Korean', 
+  'Vietnamese', 'French', 'Caribbean', 'Latin American', 'African', 'Spanish'
+]
 
 export default function AddWishlistPage() {
   const router = useRouter()
@@ -15,49 +22,65 @@ export default function AddWishlistPage() {
   // Form state
   const [name, setName] = useState('')
   const [wishlistType, setWishlistType] = useState<'restaurant' | 'recipe' | ''>('')
+  const [cuisine, setCuisine] = useState<Cuisine | ''>('')
   const [source, setSource] = useState('')
   const [url, setUrl] = useState('')
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
   const [notes, setNotes] = useState('')
   const [tags, setTags] = useState('')
+  const [createdBy, setCreatedBy] = useState<'Brett' | 'Jean' | null>(null)
+
+  useEffect(() => {
+    async function loadUserName() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.user_metadata?.display_name) {
+        setCreatedBy(user.user_metadata.display_name)
+      }
+    }
+    loadUserName()
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    
+    if (!createdBy) {
+      setError('Could not determine user. Please try logging out and back in.')
+      return
+    }
+    
     setLoading(true)
     setError('')
 
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Validate wishlist type is selected
       if (!wishlistType) {
         throw new Error('Please select whether this is a restaurant or recipe')
       }
 
-      // Create experience
       const { data: experience, error: expError } = await supabase
         .from('experiences')
         .insert({
           user_id: user.id,
           type: 'wishlist',
           name,
-          experience_date: null, // Wishlist items don't have dates
+          experience_date: null,
           notes,
           tags: tags ? tags.split(',').map(t => t.trim()) : null,
+          created_by: createdBy,
         })
         .select()
         .single()
 
       if (expError) throw expError
 
-      // Create wishlist details
       const { error: detailsError } = await supabase
         .from('wishlist_details')
         .insert({
           experience_id: experience.id,
           wishlist_type: wishlistType,
+          cuisine: cuisine || null,
           source: source || null,
           url: url || null,
           priority: priority,
@@ -65,7 +88,6 @@ export default function AddWishlistPage() {
 
       if (detailsError) throw detailsError
 
-      // Success! Redirect to home
       router.push('/')
       router.refresh()
     } catch (err: any) {
@@ -77,7 +99,6 @@ export default function AddWishlistPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <Link href="/add" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900">
@@ -87,12 +108,16 @@ export default function AddWishlistPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-xl shadow-sm p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">
-            Add to Wishlist
-          </h1>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Add to Wishlist</h1>
+            {createdBy && (
+              <div className="text-sm text-gray-600">
+                Adding as <span className="font-medium text-gray-900">{createdBy}</span>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
@@ -101,7 +126,6 @@ export default function AddWishlistPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Type Selection */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
                 What type of wishlist item? *
@@ -149,7 +173,6 @@ export default function AddWishlistPage() {
               </div>
             </div>
 
-            {/* Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {wishlistType === 'restaurant' ? 'Restaurant Name' : wishlistType === 'recipe' ? 'Recipe/Dish Name' : 'Name'} *
@@ -170,7 +193,22 @@ export default function AddWishlistPage() {
               />
             </div>
 
-            {/* Priority */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cuisine Type
+              </label>
+              <select
+                value={cuisine}
+                onChange={(e) => setCuisine(e.target.value as Cuisine)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              >
+                <option value="">Select cuisine...</option>
+                {CUISINES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Priority *
@@ -212,7 +250,6 @@ export default function AddWishlistPage() {
               </div>
             </div>
 
-            {/* Source */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Where did you hear about it?
@@ -226,7 +263,6 @@ export default function AddWishlistPage() {
               />
             </div>
 
-            {/* URL */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {wishlistType === 'restaurant' ? 'Restaurant Website/Link' : wishlistType === 'recipe' ? 'Recipe URL' : 'Website/Link'}
@@ -246,7 +282,6 @@ export default function AddWishlistPage() {
               />
             </div>
 
-            {/* Tags */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Tags
@@ -261,7 +296,6 @@ export default function AddWishlistPage() {
               <p className="mt-1 text-xs text-gray-500">Separate tags with commas</p>
             </div>
 
-            {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Notes
@@ -275,7 +309,6 @@ export default function AddWishlistPage() {
               />
             </div>
 
-            {/* Submit Button */}
             <div className="flex gap-4">
               <button
                 type="submit"

@@ -1,10 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import PhotoUpload, { Photo } from '@/components/photo-upload'
+import { Cuisine } from '@/types'
+
+const CUISINES: Cuisine[] = [
+  'American', 'Italian', 'Mexican', 'Chinese', 'Japanese', 
+  'Indian', 'Thai', 'Middle Eastern', 'Mediterranean', 'Korean', 
+  'Vietnamese', 'French', 'Caribbean', 'Latin American', 'African', 'Spanish'
+]
 
 export default function AddHomeMealPage() {
   const router = useRouter()
@@ -15,28 +23,45 @@ export default function AddHomeMealPage() {
   // Form state
   const [name, setName] = useState('')
   const [experienceDate, setExperienceDate] = useState(new Date().toISOString().split('T')[0])
-  const [recipeName, setRecipeName] = useState('')
+  const [cuisine, setCuisine] = useState<Cuisine | ''>('')
   const [ingredients, setIngredients] = useState('')
   const [instructions, setInstructions] = useState('')
   const [cookTime, setCookTime] = useState('')
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | ''>('')
   const [servings, setServings] = useState('')
-  const [rating, setRating] = useState(5)
+  const [brettRating, setBrettRating] = useState<number | null>(null)
+  const [jeanRating, setJeanRating] = useState<number | null>(null)
   const [source, setSource] = useState('')
   const [notes, setNotes] = useState('')
   const [tags, setTags] = useState('')
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [createdBy, setCreatedBy] = useState<'Brett' | 'Jean' | null>(null)
+
+  useEffect(() => {
+    async function loadUserName() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.user_metadata?.display_name) {
+        setCreatedBy(user.user_metadata.display_name)
+      }
+    }
+    loadUserName()
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    
+    if (!createdBy) {
+      setError('Could not determine user. Please try logging out and back in.')
+      return
+    }
+    
     setLoading(true)
     setError('')
 
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Create experience
       const { data: experience, error: expError } = await supabase
         .from('experiences')
         .insert({
@@ -46,30 +71,56 @@ export default function AddHomeMealPage() {
           experience_date: experienceDate,
           notes,
           tags: tags ? tags.split(',').map(t => t.trim()) : null,
+          created_by: createdBy,
         })
         .select()
         .single()
 
       if (expError) throw expError
 
-      // Create home meal details
       const { error: detailsError } = await supabase
         .from('home_meal_details')
         .insert({
           experience_id: experience.id,
-          recipe_name: recipeName || null,
+          cuisine: cuisine || null,
           ingredients: ingredients ? ingredients.split('\n').filter(i => i.trim()) : null,
           instructions: instructions || null,
           cook_time_minutes: cookTime ? parseInt(cookTime) : null,
           difficulty: difficulty || null,
           servings: servings ? parseInt(servings) : null,
-          rating: rating,
+          brett_rating: brettRating,
+          jean_rating: jeanRating,
           source: source || null,
         })
 
       if (detailsError) throw detailsError
 
-      // Success! Redirect to home
+      if (photos.length > 0) {
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i]
+          const fileExt = photo.file.name.split('.').pop()
+          const fileName = `${experience.id}-${Date.now()}-${i}.${fileExt}`
+          const filePath = `${user.id}/${fileName}`
+
+          const { error: uploadError } = await supabase.storage
+            .from('experience-photos')
+            .upload(filePath, photo.file)
+
+          if (uploadError) throw uploadError
+
+          const { error: dbError } = await supabase
+            .from('photos')
+            .insert({
+              experience_id: experience.id,
+              storage_path: filePath,
+              is_featured: photo.isFeatured,
+              sort_order: i
+            })
+
+          if (dbError) throw dbError
+        }
+      }
+
       router.push('/')
       router.refresh()
     } catch (err: any) {
@@ -81,7 +132,6 @@ export default function AddHomeMealPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <Link href="/add" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900">
@@ -91,12 +141,16 @@ export default function AddHomeMealPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-xl shadow-sm p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">
-            Add Home Meal
-          </h1>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Add Home Meal</h1>
+            {createdBy && (
+              <div className="text-sm text-gray-600">
+                Adding as <span className="font-medium text-gray-900">{createdBy}</span>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
@@ -105,7 +159,6 @@ export default function AddHomeMealPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Meal Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Meal Name *
@@ -116,11 +169,10 @@ export default function AddHomeMealPage() {
                 onChange={(e) => setName(e.target.value)}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="e.g., Thai Red Curry, Homemade Pizza"
+                placeholder="e.g., Homemade Lasagna, Chicken Stir Fry"
               />
             </div>
 
-            {/* Date Cooked */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Date Cooked *
@@ -134,21 +186,22 @@ export default function AddHomeMealPage() {
               />
             </div>
 
-            {/* Recipe Name (Optional) */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Recipe Name (if different from meal name)
+                Cuisine Type
               </label>
-              <input
-                type="text"
-                value={recipeName}
-                onChange={(e) => setRecipeName(e.target.value)}
+              <select
+                value={cuisine}
+                onChange={(e) => setCuisine(e.target.value as Cuisine)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="e.g., Jamie Oliver's 15-Minute Thai Red Curry"
-              />
+              >
+                <option value="">Select cuisine...</option>
+                {CUISINES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Difficulty, Servings, Cook Time */}
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -190,56 +243,74 @@ export default function AddHomeMealPage() {
                   value={cookTime}
                   onChange={(e) => setCookTime(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="30"
+                  placeholder="45"
                 />
               </div>
             </div>
 
-            {/* Rating */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
-                How Did It Turn Out? *
+                Ratings
               </label>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">Rating</span>
-                <span className="text-lg font-medium text-gray-900">{rating} / 5</span>
+              
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">Brett's Rating</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {brettRating ? brettRating : 'Not rated'}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="0.5"
+                  value={brettRating || 3}
+                  onChange={(e) => setBrettRating(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>1</span>
+                  <span>5</span>
+                </div>
               </div>
-              <input
-                type="range"
-                min="1"
-                max="5"
-                step="0.5"
-                value={rating}
-                onChange={(e) => setRating(parseFloat(e.target.value))}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Didn't work</span>
-                <span>Perfect!</span>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">Jean's Rating</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {jeanRating ? jeanRating : 'Not rated'}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="0.5"
+                  value={jeanRating || 3}
+                  onChange={(e) => setJeanRating(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>1</span>
+                  <span>5</span>
+                </div>
               </div>
             </div>
 
-            {/* Ingredients */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Ingredients
+                Ingredients (one per line)
               </label>
               <textarea
                 value={ingredients}
                 onChange={(e) => setIngredients(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent font-mono text-sm"
                 rows={6}
-                placeholder="List ingredients (one per line):
-2 cups rice
-1 lb chicken breast
-1 can coconut milk
-2 tbsp red curry paste
-1 cup vegetables"
+                placeholder="2 cups flour&#10;1 tsp salt&#10;3 eggs&#10;1 cup milk"
               />
-              <p className="mt-1 text-xs text-gray-500">One ingredient per line</p>
             </div>
 
-            {/* Instructions */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Instructions
@@ -249,17 +320,10 @@ export default function AddHomeMealPage() {
                 onChange={(e) => setInstructions(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 rows={6}
-                placeholder="How did you make it?
-
-1. Cook rice according to package
-2. Sauté chicken until golden
-3. Add curry paste and coconut milk
-4. Simmer for 10 minutes
-5. Add vegetables and cook until tender"
+                placeholder="1. Preheat oven to 350°F&#10;2. Mix dry ingredients...&#10;3. ..."
               />
             </div>
 
-            {/* Source */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Recipe Source
@@ -269,11 +333,15 @@ export default function AddHomeMealPage() {
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="e.g., Jamie Oliver cookbook, seriouseats.com, Mom's recipe"
+                placeholder="e.g., Grandma's cookbook, NYT Cooking, original recipe"
               />
             </div>
 
-            {/* Tags */}
+            <PhotoUpload
+              onPhotosChange={setPhotos}
+              maxPhotos={5}
+            />
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Tags
@@ -283,12 +351,11 @@ export default function AddHomeMealPage() {
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                placeholder="thai, curry, weeknight-dinner, spicy (comma separated)"
+                placeholder="comfort-food, weeknight, family-favorite (comma separated)"
               />
               <p className="mt-1 text-xs text-gray-500">Separate tags with commas</p>
             </div>
 
-            {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Notes
@@ -298,11 +365,10 @@ export default function AddHomeMealPage() {
                 onChange={(e) => setNotes(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 rows={4}
-                placeholder="Any other thoughts? Would you make it again? What would you change?"
+                placeholder="Any tips, substitutions, or thoughts about this meal?"
               />
             </div>
 
-            {/* Submit Button */}
             <div className="flex gap-4">
               <button
                 type="submit"

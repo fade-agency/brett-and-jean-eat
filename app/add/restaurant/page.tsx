@@ -1,10 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import PhotoUpload, { Photo } from '@/components/photo-upload'
+import { Cuisine } from '@/types'
+
+const CUISINES: Cuisine[] = [
+  'American', 'Italian', 'Mexican', 'Chinese', 'Japanese', 
+  'Indian', 'Thai', 'Middle Eastern', 'Mediterranean', 'Korean', 
+  'Vietnamese', 'French', 'Caribbean', 'Latin American', 'African', 'Spanish'
+]
 
 export default function AddRestaurantPage() {
   const router = useRouter()
@@ -15,30 +23,44 @@ export default function AddRestaurantPage() {
   // Form state
   const [name, setName] = useState('')
   const [experienceDate, setExperienceDate] = useState(new Date().toISOString().split('T')[0])
-  const [cuisine, setCuisine] = useState('')
+  const [cuisine, setCuisine] = useState<Cuisine | ''>('')
   const [priceRange, setPriceRange] = useState<'$' | '$$' | '$$$' | '$$$$' | ''>('')
   const [address, setAddress] = useState('')
-  const [phone, setPhone] = useState('')
   const [website, setWebsite] = useState('')
-  const [ratingFood, setRatingFood] = useState(5)
-  const [ratingService, setRatingService] = useState(5)
-  const [ratingAmbiance, setRatingAmbiance] = useState(5)
+  const [brettRating, setBrettRating] = useState<number | null>(null)
+  const [jeanRating, setJeanRating] = useState<number | null>(null)
   const [dishesOrdered, setDishesOrdered] = useState('')
   const [cost, setCost] = useState('')
   const [notes, setNotes] = useState('')
   const [tags, setTags] = useState('')
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [createdBy, setCreatedBy] = useState<'Brett' | 'Jean' | null>(null)
+
+  useEffect(() => {
+    async function loadUserName() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.user_metadata?.display_name) {
+        setCreatedBy(user.user_metadata.display_name)
+      }
+    }
+    loadUserName()
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    
+    if (!createdBy) {
+      setError('Could not determine user. Please try logging out and back in.')
+      return
+    }
+    
     setLoading(true)
     setError('')
 
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Create experience
       const { data: experience, error: expError } = await supabase
         .from('experiences')
         .insert({
@@ -48,13 +70,13 @@ export default function AddRestaurantPage() {
           experience_date: experienceDate,
           notes,
           tags: tags ? tags.split(',').map(t => t.trim()) : null,
+          created_by: createdBy,
         })
         .select()
         .single()
 
       if (expError) throw expError
 
-      // Create restaurant details
       const { error: detailsError } = await supabase
         .from('restaurant_details')
         .insert({
@@ -62,18 +84,41 @@ export default function AddRestaurantPage() {
           cuisine: cuisine || null,
           price_range: priceRange || null,
           address: address || null,
-          phone: phone || null,
           website: website || null,
-          rating_food: ratingFood,
-          rating_service: ratingService,
-          rating_ambiance: ratingAmbiance,
+          brett_rating: brettRating,
+          jean_rating: jeanRating,
           dishes_ordered: dishesOrdered || null,
           cost: cost ? parseFloat(cost) : null,
         })
 
       if (detailsError) throw detailsError
 
-      // Success! Redirect to home
+      if (photos.length > 0) {
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i]
+          const fileExt = photo.file.name.split('.').pop()
+          const fileName = `${experience.id}-${Date.now()}-${i}.${fileExt}`
+          const filePath = `${user.id}/${fileName}`
+
+          const { error: uploadError } = await supabase.storage
+            .from('experience-photos')
+            .upload(filePath, photo.file)
+
+          if (uploadError) throw uploadError
+
+          const { error: dbError } = await supabase
+            .from('photos')
+            .insert({
+              experience_id: experience.id,
+              storage_path: filePath,
+              is_featured: photo.isFeatured,
+              sort_order: i
+            })
+
+          if (dbError) throw dbError
+        }
+      }
+
       router.push('/')
       router.refresh()
     } catch (err: any) {
@@ -85,7 +130,6 @@ export default function AddRestaurantPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <Link href="/add" className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900">
@@ -95,12 +139,16 @@ export default function AddRestaurantPage() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-xl shadow-sm p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">
-            Add Restaurant Experience
-          </h1>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Add Restaurant Experience</h1>
+            {createdBy && (
+              <div className="text-sm text-gray-600">
+                Adding as <span className="font-medium text-gray-900">{createdBy}</span>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
@@ -109,7 +157,6 @@ export default function AddRestaurantPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Restaurant Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Restaurant Name *
@@ -124,7 +171,6 @@ export default function AddRestaurantPage() {
               />
             </div>
 
-            {/* Date Visited */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Date Visited *
@@ -138,19 +184,21 @@ export default function AddRestaurantPage() {
               />
             </div>
 
-            {/* Cuisine & Price Range */}
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Cuisine Type
                 </label>
-                <input
-                  type="text"
+                <select
                   value={cuisine}
-                  onChange={(e) => setCuisine(e.target.value)}
+                  onChange={(e) => setCuisine(e.target.value as Cuisine)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="e.g., Italian, Thai, Mexican"
-                />
+                >
+                  <option value="">Select cuisine...</option>
+                  {CUISINES.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -171,63 +219,60 @@ export default function AddRestaurantPage() {
               </div>
             </div>
 
-            {/* Ratings */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
-                Ratings *
+                Ratings
               </label>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Food</span>
-                    <span className="text-sm font-medium text-gray-900">{ratingFood}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={ratingFood}
-                    onChange={(e) => setRatingFood(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
+              
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">Brett's Rating</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {brettRating ? brettRating : 'Not rated'}
+                  </span>
                 </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Service</span>
-                    <span className="text-sm font-medium text-gray-900">{ratingService}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={ratingService}
-                    onChange={(e) => setRatingService(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600">Ambiance</span>
-                    <span className="text-sm font-medium text-gray-900">{ratingAmbiance}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="5"
-                    step="0.5"
-                    value={ratingAmbiance}
-                    onChange={(e) => setRatingAmbiance(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="0.5"
+                  value={brettRating || 3}
+                  onChange={(e) => setBrettRating(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>1</span>
+                  <span>5</span>
                 </div>
               </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">Jean's Rating</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {jeanRating ? jeanRating : 'Not rated'}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="0.5"
+                  value={jeanRating || 3}
+                  onChange={(e) => setJeanRating(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>1</span>
+                  <span>5</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 mt-2">
+                Both can rate - just leave blank if you haven't rated yet
+              </p>
             </div>
 
-            {/* What You Ordered */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 What Did You Order?
@@ -241,7 +286,6 @@ export default function AddRestaurantPage() {
               />
             </div>
 
-            {/* Cost */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Total Cost
@@ -259,7 +303,6 @@ export default function AddRestaurantPage() {
               </div>
             </div>
 
-            {/* Address */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Address
@@ -273,36 +316,24 @@ export default function AddRestaurantPage() {
               />
             </div>
 
-            {/* Phone & Website */}
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone
-                </label>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="(555) 123-4567"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Website
-                </label>
-                <input
-                  type="url"
-                  value={website}
-                  onChange={(e) => setWebsite(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  placeholder="https://..."
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Website
+              </label>
+              <input
+                type="url"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="https://..."
+              />
             </div>
 
-            {/* Tags */}
+            <PhotoUpload
+              onPhotosChange={setPhotos}
+              maxPhotos={5}
+            />
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Tags
@@ -317,7 +348,6 @@ export default function AddRestaurantPage() {
               <p className="mt-1 text-xs text-gray-500">Separate tags with commas</p>
             </div>
 
-            {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Notes
@@ -331,7 +361,6 @@ export default function AddRestaurantPage() {
               />
             </div>
 
-            {/* Submit Button */}
             <div className="flex gap-4">
               <button
                 type="submit"
