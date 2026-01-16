@@ -21,40 +21,25 @@ export default function UpdatePasswordPage() {
     verifyRecoverySession()
   }, [])
 
-  async function verifyRecoverySession() {
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      
-      if (sessionError || !session) {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const accessToken = hashParams.get('access_token')
-        const refreshToken = hashParams.get('refresh_token')
-        
-        if (accessToken && refreshToken) {
-          const { error: setSessionError } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          })
-          
-          if (setSessionError) {
-            setError('Invalid or expired reset link. Please request a new one.')
-            setVerifying(false)
-            return
-          }
-        } else {
-          setError('Invalid or expired reset link. Please request a new one.')
-          setVerifying(false)
-          return
-        }
-      }
-      
+async function verifyRecoverySession() {
+  try {
+    // Just check if we have ANY valid session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    
+    if (sessionError || !session) {
+      setError('Invalid or expired reset link. Please request a new one.')
       setVerifying(false)
-    } catch (err) {
-      console.error('Session verification error:', err)
-      setError('Something went wrong. Please request a new reset link.')
-      setVerifying(false)
+      return
     }
+    
+    // We have a valid session, we're good to go
+    setVerifying(false)
+  } catch (err) {
+    console.error('Session verification error:', err)
+    setError('Something went wrong. Please request a new reset link.')
+    setVerifying(false)
   }
+}
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
