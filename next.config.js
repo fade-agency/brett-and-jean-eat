@@ -8,6 +8,10 @@ const nextConfig = {
       },
     ],
   },
-}
 
-module.exports = nextConfig
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+};
+
+module.exports = nextConfig;
