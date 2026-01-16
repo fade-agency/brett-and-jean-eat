@@ -25,7 +25,7 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
     try {
       // Get the wishlist data
       const { data: wishlist } = await supabase
-        .from('experiences')
+        .from('visits')
         .select(`*, wishlist_details(*), photos(*)`)
         .eq('id', wishlistId)
         .single()
@@ -35,14 +35,33 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Create new experience
-      const { data: newExperience, error: expError } = await supabase
-        .from('experiences')
+      let placeId = null
+
+      // If converting to restaurant, create a place
+      if (selectedType === 'restaurant') {
+        const { data: newPlace, error: placeError } = await supabase
+          .from('places')
+          .insert({
+            user_id: user.id,
+            name: wishlist.name,
+            cuisine: wishlist.wishlist_details?.cuisine || null,
+          })
+          .select()
+          .single()
+
+        if (placeError) throw placeError
+        placeId = newPlace.id
+      }
+
+      // Create new visit
+      const { data: newVisit, error: visitError } = await supabase
+        .from('visits')
         .insert({
           user_id: user.id,
+          place_id: placeId,
           type: selectedType,
           name: wishlist.name,
-          experience_date: new Date().toISOString().split('T')[0], // Today's date
+          visit_date: new Date().toISOString().split('T')[0], // Today's date
           notes: wishlist.notes,
           tags: wishlist.tags,
           created_by: wishlist.created_by,
@@ -50,22 +69,21 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
         .select()
         .single()
 
-      if (expError) throw expError
+      if (visitError) throw visitError
 
       // Create type-specific details
       if (selectedType === 'restaurant') {
         const { error: detailsError } = await supabase
-          .from('restaurant_details')
+          .from('restaurant_visit_details')
           .insert({
-            experience_id: newExperience.id,
-            cuisine: wishlist.wishlist_details?.cuisine || null,
+            visit_id: newVisit.id,
           })
         if (detailsError) throw detailsError
       } else {
         const { error: detailsError } = await supabase
           .from('home_meal_details')
           .insert({
-            experience_id: newExperience.id,
+            visit_id: newVisit.id,
             cuisine: wishlist.wishlist_details?.cuisine || null,
           })
         if (detailsError) throw detailsError
@@ -88,7 +106,7 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
 
           // Upload to new location
           const fileExt = photo.storage_path.split('.').pop()
-          const fileName = `${newExperience.id}-${Date.now()}-${i}.${fileExt}`
+          const fileName = `${newVisit.id}-${Date.now()}-${i}.${fileExt}`
           const filePath = `${user.id}/${fileName}`
 
           const { error: uploadError } = await supabase.storage
@@ -102,7 +120,7 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
 
           // Create photo record
           await supabase.from('photos').insert({
-            experience_id: newExperience.id,
+            visit_id: newVisit.id,
             storage_path: filePath,
             is_featured: photo.is_featured,
             sort_order: photo.sort_order,
@@ -111,15 +129,15 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
       }
 
       // Delete the wishlist item
-      await supabase.from('experiences').delete().eq('id', wishlistId)
+      await supabase.from('visits').delete().eq('id', wishlistId)
 
       showToast('Converted to visited! Redirecting to edit...', 'success')
       
       // Redirect to edit page
       setTimeout(() => {
         window.location.href = selectedType === 'restaurant' 
-          ? `/edit/restaurant/${newExperience.id}`
-          : `/edit/home-meal/${newExperience.id}`
+          ? `/edit/restaurant/${newVisit.id}`
+          : `/edit/home-meal/${newVisit.id}`
       }, 1000)
 
     } catch (err: any) {
@@ -201,7 +219,7 @@ export default function ConvertWishlistModal({ wishlistId, wishlistName, onClose
         </div>
 
         <p className="text-xs text-gray-500 mt-4 text-center">
-          This will remove it from your wishlist and create a new {selectedType === 'restaurant' ? 'restaurant' : 'home meal'} experience. You'll be able to add ratings and details next.
+          This will remove it from your wishlist and create a new {selectedType === 'restaurant' ? 'restaurant' : 'home meal'} visit. You'll be able to add ratings and details next.
         </p>
       </div>
     </div>

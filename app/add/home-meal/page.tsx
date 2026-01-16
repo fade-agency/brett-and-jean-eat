@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Coffee, Sun, Moon, Cookie } from 'lucide-react'
 import PhotoUpload, { Photo } from '@/components/photo-upload'
 import { Cuisine } from '@/types'
 
@@ -22,7 +22,8 @@ export default function AddHomeMealPage() {
 
   // Form state
   const [name, setName] = useState('')
-  const [experienceDate, setExperienceDate] = useState(new Date().toISOString().split('T')[0])
+  const [visitDate, setVisitDate] = useState(new Date().toISOString().split('T')[0])
+  const [mealTime, setMealTime] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack' | ''>('')
   const [cuisine, setCuisine] = useState<Cuisine | ''>('')
   const [ingredients, setIngredients] = useState('')
   const [instructions, setInstructions] = useState('')
@@ -62,13 +63,14 @@ export default function AddHomeMealPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      const { data: experience, error: expError } = await supabase
-        .from('experiences')
+      const { data: visit, error: visitError } = await supabase
+        .from('visits')
         .insert({
           user_id: user.id,
           type: 'home_meal',
           name,
-          experience_date: experienceDate,
+          visit_date: visitDate,
+          meal_time: mealTime || null,
           notes,
           tags: tags ? tags.split(',').map(t => t.trim()) : null,
           created_by: createdBy,
@@ -76,12 +78,12 @@ export default function AddHomeMealPage() {
         .select()
         .single()
 
-      if (expError) throw expError
+      if (visitError) throw visitError
 
       const { error: detailsError } = await supabase
         .from('home_meal_details')
         .insert({
-          experience_id: experience.id,
+          visit_id: visit.id,
           cuisine: cuisine || null,
           ingredients: ingredients ? ingredients.split('\n').filter(i => i.trim()) : null,
           instructions: instructions || null,
@@ -99,7 +101,7 @@ export default function AddHomeMealPage() {
         for (let i = 0; i < photos.length; i++) {
           const photo = photos[i]
           const fileExt = photo.file.name.split('.').pop()
-          const fileName = `${experience.id}-${Date.now()}-${i}.${fileExt}`
+          const fileName = `${visit.id}-${Date.now()}-${i}.${fileExt}`
           const filePath = `${user.id}/${fileName}`
 
           const { error: uploadError } = await supabase.storage
@@ -111,7 +113,7 @@ export default function AddHomeMealPage() {
           const { error: dbError } = await supabase
             .from('photos')
             .insert({
-              experience_id: experience.id,
+              visit_id: visit.id,
               storage_path: filePath,
               is_featured: photo.isFeatured,
               sort_order: i
@@ -173,17 +175,47 @@ export default function AddHomeMealPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date Cooked *
-              </label>
-              <input
-                type="date"
-                value={experienceDate}
-                onChange={(e) => setExperienceDate(e.target.value)}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              />
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date Cooked *
+                </label>
+                <input
+                  type="date"
+                  value={visitDate}
+                  onChange={(e) => setVisitDate(e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Meal Time
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { value: 'breakfast', icon: Coffee, label: 'Breakfast' },
+                    { value: 'lunch', icon: Sun, label: 'Lunch' },
+                    { value: 'dinner', icon: Moon, label: 'Dinner' },
+                    { value: 'snack', icon: Cookie, label: 'Snack' }
+                  ].map(({ value, icon: Icon, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setMealTime(value as any)}
+                      className={`p-2 border-2 rounded-lg transition-all ${
+                        mealTime === value
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      title={label}
+                    >
+                      <Icon className={`w-5 h-5 mx-auto ${mealTime === value ? 'text-red-500' : 'text-gray-400'}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div>

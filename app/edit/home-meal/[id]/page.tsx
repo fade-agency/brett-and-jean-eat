@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, X, Star } from 'lucide-react'
+import { ArrowLeft, X, Star, Coffee, Sun, Moon, Cookie } from 'lucide-react'
 import PhotoUpload, { Photo } from '@/components/photo-upload'
 import { Cuisine } from '@/types'
 
@@ -13,23 +13,26 @@ const CUISINES: Cuisine[] = [
   'Vietnamese', 'French', 'Caribbean', 'Latin American', 'African', 'Spanish'
 ]
 
-export default function EditHomeMealPage() {
+export default function EditRestaurantPage() {
   const params = useParams()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [name, setName] = useState('')
-  const [experienceDate, setExperienceDate] = useState('')
+  
+  const [placeId, setPlaceId] = useState<string | null>(null)
+  const [placeName, setPlaceName] = useState('')
   const [cuisine, setCuisine] = useState<Cuisine | ''>('')
-  const [ingredients, setIngredients] = useState('')
-  const [instructions, setInstructions] = useState('')
-  const [cookTime, setCookTime] = useState('')
-  const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard' | ''>('')
-  const [servings, setServings] = useState('')
+  const [priceRange, setPriceRange] = useState<'$' | '$$' | '$$$' | '$$$$' | ''>('')
+  const [address, setAddress] = useState('')
+  const [website, setWebsite] = useState('')
+  
+  const [visitDate, setVisitDate] = useState('')
+  const [mealTime, setMealTime] = useState<'breakfast' | 'lunch' | 'dinner' | 'snack' | ''>('')
   const [brettRating, setBrettRating] = useState<number | null>(null)
   const [jeanRating, setJeanRating] = useState<number | null>(null)
-  const [source, setSource] = useState('')
+  const [dishesOrdered, setDishesOrdered] = useState('')
+  const [cost, setCost] = useState('')
   const [notes, setNotes] = useState('')
   const [tags, setTags] = useState('')
   const [newPhotos, setNewPhotos] = useState<Photo[]>([])
@@ -40,33 +43,40 @@ export default function EditHomeMealPage() {
   const [createdBy, setCreatedBy] = useState<'Brett' | 'Jean' | null>(null)
 
   useEffect(() => {
-    loadExperience()
+    loadVisit()
   }, [])
 
-  async function loadExperience() {
+  async function loadVisit() {
     const { data } = await supabase
-      .from('experiences')
-      .select(`*, home_meal_details(*), photos(*)`)
+      .from('visits')
+      .select(`
+        *,
+        place:places(*),
+        restaurant_visit_details(*),
+        photos(*)
+      `)
       .eq('id', params.id)
       .single()
 
     if (data) {
-      setName(data.name)
-      setExperienceDate(data.experience_date)
+      setPlaceId(data.place_id)
+      setPlaceName(data.place?.name || data.name)
+      setCuisine(data.place?.cuisine || '')
+      setPriceRange(data.place?.price_range || '')
+      setAddress(data.place?.address || '')
+      setWebsite(data.place?.website || '')
+      
+      setVisitDate(data.visit_date)
+      setMealTime(data.meal_time || '')
       setNotes(data.notes || '')
       setTags(data.tags ? data.tags.join(', ') : '')
       setCreatedBy(data.created_by)
 
-      if (data.home_meal_details) {
-        setCuisine(data.home_meal_details.cuisine || '')
-        setIngredients(data.home_meal_details.ingredients ? data.home_meal_details.ingredients.join('\n') : '')
-        setInstructions(data.home_meal_details.instructions || '')
-        setCookTime(data.home_meal_details.cook_time_minutes?.toString() || '')
-        setDifficulty(data.home_meal_details.difficulty || '')
-        setServings(data.home_meal_details.servings?.toString() || '')
-        setBrettRating(data.home_meal_details.brett_rating)
-        setJeanRating(data.home_meal_details.jean_rating)
-        setSource(data.home_meal_details.source || '')
+      if (data.restaurant_visit_details) {
+        setBrettRating(data.restaurant_visit_details.brett_rating)
+        setJeanRating(data.restaurant_visit_details.jean_rating)
+        setDishesOrdered(data.restaurant_visit_details.dishes_ordered || '')
+        setCost(data.restaurant_visit_details.cost?.toString() || '')
       }
 
       if (data.photos?.length > 0) {
@@ -119,25 +129,35 @@ export default function EditHomeMealPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      await supabase.from('experiences').update({
-        name,
-        experience_date: experienceDate,
+      // Update place info
+      if (placeId) {
+        await supabase.from('places').update({
+          name: placeName,
+          cuisine: cuisine || null,
+          price_range: priceRange || null,
+          address: address || null,
+          website: website || null,
+        }).eq('id', placeId)
+      }
+
+      // Update visit
+      await supabase.from('visits').update({
+        name: placeName, // Keep for backwards compatibility
+        visit_date: visitDate,
+        meal_time: mealTime || null,
         notes,
         tags: tags ? tags.split(',').map(t => t.trim()) : null,
       }).eq('id', params.id)
 
-      await supabase.from('home_meal_details').update({
-        cuisine: cuisine || null,
-        ingredients: ingredients ? ingredients.split('\n').filter(i => i.trim()) : null,
-        instructions: instructions || null,
-        cook_time_minutes: cookTime ? parseInt(cookTime) : null,
-        difficulty: difficulty || null,
-        servings: servings ? parseInt(servings) : null,
+      // Update visit details
+      await supabase.from('restaurant_visit_details').update({
         brett_rating: brettRating,
         jean_rating: jeanRating,
-        source: source || null,
-      }).eq('experience_id', params.id)
+        dishes_ordered: dishesOrdered || null,
+        cost: cost ? parseFloat(cost) : null,
+      }).eq('visit_id', params.id)
 
+      // Update photos
       for (const photo of existingPhotos.filter(p => !photosToDelete.includes(p.id))) {
         await supabase.from('photos').update({
           is_featured: photo.is_featured,
@@ -145,6 +165,7 @@ export default function EditHomeMealPage() {
         }).eq('id', photo.id)
       }
 
+      // Delete photos
       for (const photoId of photosToDelete) {
         const photo = existingPhotos.find(p => p.id === photoId)
         if (photo) {
@@ -153,6 +174,7 @@ export default function EditHomeMealPage() {
         }
       }
 
+      // Upload new photos
       if (newPhotos.length > 0) {
         const currentMaxOrder = Math.max(0, ...existingPhotos.filter(p => !photosToDelete.includes(p.id)).map(p => p.sort_order || 0))
         for (let i = 0; i < newPhotos.length; i++) {
@@ -162,7 +184,7 @@ export default function EditHomeMealPage() {
           const filePath = `${user.id}/${fileName}`
           await supabase.storage.from('experience-photos').upload(filePath, photo.file)
           await supabase.from('photos').insert({
-            experience_id: params.id,
+            visit_id: params.id,
             storage_path: filePath,
             is_featured: photo.isFeatured,
             sort_order: currentMaxOrder + i + 1
@@ -197,7 +219,7 @@ export default function EditHomeMealPage() {
       <main className="max-w-2xl mx-auto p-8">
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold">Edit Home Meal</h1>
+            <h1 className="text-2xl font-bold">Edit Restaurant Visit</h1>
             {createdBy && <div className="text-sm text-gray-600">Added by <span className="font-medium">{createdBy}</span></div>}
           </div>
 
@@ -205,126 +227,155 @@ export default function EditHomeMealPage() {
 
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Meal Name *</label>
-              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Restaurant Name *</label>
+              <input type="text" value={placeName} onChange={(e) => setPlaceName(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Date Cooked *</label>
-              <input type="date" value={experienceDate} onChange={(e) => setExperienceDate(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cuisine Type</label>
-              <select
-                value={cuisine}
-                onChange={(e) => setCuisine(e.target.value as Cuisine)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              >
-                <option value="">Select cuisine...</option>
-                {CUISINES.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Difficulty</label>
-                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as any)} className="w-full px-4 py-2 border rounded-lg">
-                  <option value="">Select...</option>
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Cuisine Type</label>
+                <select value={cuisine} onChange={(e) => setCuisine(e.target.value as Cuisine)} className="w-full px-4 py-2 border rounded-lg">
+                  <option value="">Select cuisine...</option>
+                  {CUISINES.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Servings</label>
-                <input type="number" min="1" value={servings} onChange={(e) => setServings(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Cook Time (min)</label>
-                <input type="number" min="1" value={cookTime} onChange={(e) => setCookTime(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+                <label className="block text-sm font-medium text-gray-700 mb-2">Price Range</label>
+                <select value={priceRange} onChange={(e) => setPriceRange(e.target.value as any)} className="w-full px-4 py-2 border rounded-lg">
+                  <option value="">Select...</option>
+                  <option value="$">$ - Under $15</option>
+                  <option value="$$">$$ - $15-30</option>
+                  <option value="$$$">$$$ - $30-60</option>
+                  <option value="$$$$">$$$$ - $60+</option>
+                </select>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Ratings</label>
-              <div className="mb-4">
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm">Brett</span>
-                  <span className="text-sm font-medium">{brettRating || 'Not rated'}</span>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+              <textarea value={address} onChange={(e) => setAddress(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows={2} />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Website</label>
+              <input type="url" value={website} onChange={(e) => setWebsite(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+            </div>
+
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-medium mb-4">Visit Details</h3>
+
+              <div className="grid md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date Visited *</label>
+                  <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
                 </div>
-                <input type="range" min="1" max="5" step="0.5" value={brettRating || 3} onChange={(e) => setBrettRating(parseFloat(e.target.value))} className="w-full" />
-              </div>
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm">Jean</span>
-                  <span className="text-sm font-medium">{jeanRating || 'Not rated'}</span>
-                </div>
-                <input type="range" min="1" max="5" step="0.5" value={jeanRating || 3} onChange={(e) => setJeanRating(parseFloat(e.target.value))} className="w-full" />
-              </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Ingredients (one per line)</label>
-              <textarea value={ingredients} onChange={(e) => setIngredients(e.target.value)} className="w-full px-4 py-2 border rounded-lg font-mono text-sm" rows={6} placeholder="2 cups flour&#10;1 tsp salt&#10;3 eggs" />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Instructions</label>
-              <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows={6} />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Recipe Source</label>
-              <input type="text" value={source} onChange={(e) => setSource(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="e.g., Grandma's cookbook, NYT Cooking" />
-            </div>
-
-            {existingPhotos.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
-                <p className="text-sm text-gray-600 mb-3">💡 Drag to reorder • Click star for featured</p>
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  {existingPhotos.filter(p => !photosToDelete.includes(p.id)).map((photo) => (
-                    <div key={photo.id} className={`relative aspect-square cursor-move ${draggedPhotoId === photo.id ? 'opacity-50' : ''}`} draggable onDragStart={() => handleDragStart(photo.id)} onDragOver={(e) => handleDragOver(e, photo.id)} onDragEnd={handleDragEnd}>
-                      <img src={photoUrlsMap[photo.id]} alt="" className="w-full h-full object-cover rounded-lg" />
-                      <button type="button" onClick={() => handleSetFeatured(photo.id)} className={`absolute top-2 left-2 p-1.5 rounded-full ${photo.is_featured ? 'bg-yellow-400' : 'bg-white/80'}`}>
-                        <Star className={`w-4 h-4 ${photo.is_featured ? 'fill-current' : ''}`} />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Meal Time</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { value: 'breakfast', icon: Coffee, label: 'Breakfast' },
+                      { value: 'lunch', icon: Sun, label: 'Lunch' },
+                      { value: 'dinner', icon: Moon, label: 'Dinner' },
+                      { value: 'snack', icon: Cookie, label: 'Snack' }
+                    ].map(({ value, icon: Icon, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setMealTime(value as any)}
+                        className={`p-2 border-2 rounded-lg transition-all ${
+                          mealTime === value
+                            ? 'border-red-500 bg-red-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        title={label}
+                      >
+                        <Icon className={`w-5 h-5 mx-auto ${mealTime === value ? 'text-red-500' : 'text-gray-400'}`} />
                       </button>
-                      <button type="button" onClick={() => setPhotosToDelete([...photosToDelete, photo.id])} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full">
-                        <X className="w-4 h-4" />
-                      </button>
-                      <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">#{photo.sort_order + 1}</div>
-                    </div>
-                  ))}
-                </div>
-                {photosToDelete.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-sm font-medium text-red-600 mb-2">To delete ({photosToDelete.length})</p>
-                    <div className="grid grid-cols-3 gap-4">
-                      {existingPhotos.filter(p => photosToDelete.includes(p.id)).map((photo) => (
-                        <div key={photo.id} className="relative aspect-square">
-                          <img src={photoUrlsMap[photo.id]} alt="" className="w-full h-full object-cover rounded-lg opacity-30" />
-                          <button type="button" onClick={() => setPhotosToDelete(photosToDelete.filter(id => id !== photo.id))} className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded text-xs">Undo</button>
-                        </div>
-                      ))}
-                    </div>
+                    ))}
                   </div>
-                )}
+                </div>
               </div>
-            )}
 
-            <PhotoUpload onPhotosChange={setNewPhotos} maxPhotos={5} />
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ratings</label>
+                <div className="mb-4">
+                  <div className="flex justify-between mb-2">
+                    <span className="text-sm">Brett</span>
+                    <span className="text-sm font-medium">{brettRating || 'Not rated'}</span>
+                  </div>
+                  <input type="range" min="1" max="5" step="0.5" value={brettRating || 3} onChange={(e) => setBrettRating(parseFloat(e.target.value))} className="w-full" />
+                </div>
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-sm">Jean</span>
+                    <span className="text-sm font-medium">{jeanRating || 'Not rated'}</span>
+                  </div>
+                  <input type="range" min="1" max="5" step="0.5" value={jeanRating || 3} onChange={(e) => setJeanRating(parseFloat(e.target.value))} className="w-full" />
+                </div>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
-              <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="italian, comfort food, weeknight" />
-            </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">What Did You Order?</label>
+                <textarea value={dishesOrdered} onChange={(e) => setDishesOrdered(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows={3} />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows={4} />
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Total Cost</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-2.5 text-gray-500">$</span>
+                  <input type="number" step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} className="w-full pl-8 pr-4 py-2 border rounded-lg" />
+                </div>
+              </div>
+
+              {existingPhotos.length > 0 && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
+                  <p className="text-sm text-gray-600 mb-3">💡 Drag to reorder • Click star for featured</p>
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    {existingPhotos.filter(p => !photosToDelete.includes(p.id)).map((photo) => (
+                      <div key={photo.id} className={`relative aspect-square cursor-move ${draggedPhotoId === photo.id ? 'opacity-50' : ''}`} draggable onDragStart={() => handleDragStart(photo.id)} onDragOver={(e) => handleDragOver(e, photo.id)} onDragEnd={handleDragEnd}>
+                        <img src={photoUrlsMap[photo.id]} alt="" className="w-full h-full object-cover rounded-lg" />
+                        <button type="button" onClick={() => handleSetFeatured(photo.id)} className={`absolute top-2 left-2 p-1.5 rounded-full ${photo.is_featured ? 'bg-yellow-400' : 'bg-white/80'}`}>
+                          <Star className={`w-4 h-4 ${photo.is_featured ? 'fill-current' : ''}`} />
+                        </button>
+                        <button type="button" onClick={() => setPhotosToDelete([...photosToDelete, photo.id])} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full">
+                          <X className="w-4 h-4" />
+                        </button>
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">#{photo.sort_order + 1}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {photosToDelete.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium text-red-600 mb-2">To delete ({photosToDelete.length})</p>
+                      <div className="grid grid-cols-3 gap-4">
+                        {existingPhotos.filter(p => photosToDelete.includes(p.id)).map((photo) => (
+                          <div key={photo.id} className="relative aspect-square">
+                            <img src={photoUrlsMap[photo.id]} alt="" className="w-full h-full object-cover rounded-lg opacity-30" />
+                            <button type="button" onClick={() => setPhotosToDelete(photosToDelete.filter(id => id !== photo.id))} className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded text-xs">Undo</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <PhotoUpload onPhotosChange={setNewPhotos} maxPhotos={5} />
+
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
+                <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="w-full px-4 py-2 border rounded-lg" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows={4} />
+              </div>
             </div>
 
             <div className="flex gap-4">

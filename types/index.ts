@@ -1,146 +1,80 @@
-// types/index.ts
-// Type definitions for Brett & Jean Eat
+export type Cuisine = 
+  | 'American' | 'Italian' | 'Mexican' | 'Chinese' | 'Japanese'
+  | 'Indian' | 'Thai' | 'Middle Eastern' | 'Mediterranean' | 'Korean'
+  | 'Vietnamese' | 'French' | 'Caribbean' | 'Latin American' | 'African' | 'Spanish'
 
-export type Cuisine = string;
-export type ExperienceType = 'restaurant' | 'home_meal' | 'wishlist';
-export type PriceRange = '$' | '$$' | '$$$' | '$$$$';
-export type Difficulty = 'easy' | 'medium' | 'hard';
-export type Priority = 'low' | 'medium' | 'high';
-export type WishlistType = 'restaurant' | 'recipe';
+export type MealTime = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
-// Core Experience type
-export interface Experience {
-  id: string;
-  user_id: string;
-  type: ExperienceType;
-  name: string;
-  experience_date: string | null;
-  notes: string | null;
-  tags: string[] | null;
-  is_favorite: boolean;
-  created_at: string;
-  updated_at: string;
+export interface Place {
+  id: string
+  user_id: string
+  name: string
+  cuisine: Cuisine | null
+  address: string | null
+  website: string | null
+  price_range: '$' | '$$' | '$$$' | '$$$$' | null
+  created_at: string
+  updated_at: string
 }
 
-// Restaurant details
-export interface RestaurantDetails {
-  experience_id: string;
-  cuisine: string | null;
-  price_range: PriceRange | null;
-  address: string | null;
-  phone: string | null;
-  website: string | null;
-  rating_food: number | null;
-  rating_service: number | null;
-  rating_ambiance: number | null;
-  overall_rating: number | null;
-  dishes_ordered: string | null;
-  cost: number | null;
-  visit_count: number;
-  would_return: boolean;
+export interface Visit {
+  id: string
+  user_id: string
+  place_id: string | null
+  type: 'restaurant' | 'home_meal' | 'wishlist'
+  name: string
+  visit_date: string | null
+  meal_time: MealTime | null
+  notes: string | null
+  tags: string[] | null
+  created_by: 'Brett' | 'Jean' | null
+  is_favorite: boolean
+  visit_number: number
+  created_at: string
+  updated_at: string
 }
 
-// Home meal details
+export interface RestaurantVisitDetails {
+  id: string
+  visit_id: string
+  brett_rating: number | null
+  jean_rating: number | null
+  dishes_ordered: string | null
+  cost: number | null
+  created_at: string
+}
+
 export interface HomeMealDetails {
-  experience_id: string;
-  recipe_name: string | null;
-  ingredients: string[] | null;
-  instructions: string | null;
-  cook_time_minutes: number | null;
-  difficulty: Difficulty | null;
-  servings: number | null;
-  rating: number | null;
-  would_make_again: boolean;
-  source: string | null;
+  id: string
+  visit_id: string
+  cuisine: Cuisine | null
+  ingredients: string[] | null
+  instructions: string | null
+  cook_time_minutes: number | null
+  difficulty: 'easy' | 'medium' | 'hard' | null
+  servings: number | null
+  brett_rating: number | null
+  jean_rating: number | null
+  source: string | null
+  created_at: string
 }
 
-// Wishlist details
 export interface WishlistDetails {
-  experience_id: string;
-  wishlist_type: WishlistType;
-  source: string | null;
-  url: string | null;
-  priority: Priority;
+  id: string
+  visit_id: string
+  wishlist_type: 'restaurant' | 'recipe' | null
+  cuisine: Cuisine | null
+  source: string | null
+  url: string | null
+  priority: 'low' | 'medium' | 'high'
+  created_at: string
 }
 
-// Photo
 export interface Photo {
-  id: string;
-  experience_id: string;
-  storage_path: string;
-  caption: string | null;
-  sort_order: number;
-  uploaded_at: string;
-}
-
-// Combined types for fetching
-export interface RestaurantExperience extends Experience {
-  restaurant_details: RestaurantDetails | null;
-  photos: Photo[];
-}
-
-export interface HomeMealExperience extends Experience {
-  home_meal_details: HomeMealDetails | null;
-  photos: Photo[];
-}
-
-export interface WishlistExperience extends Experience {
-  wishlist_details: WishlistDetails | null;
-  photos: Photo[];
-}
-
-// Union type for any experience with details
-export type FullExperience = RestaurantExperience | HomeMealExperience | WishlistExperience;
-
-// Form data types (for creating/updating)
-export interface CreateRestaurantData {
-  name: string;
-  experience_date: string;
-  notes?: string;
-  tags?: string[];
-  cuisine?: string;
-  price_range?: PriceRange;
-  address?: string;
-  phone?: string;
-  website?: string;
-  rating_food: number;
-  rating_service: number;
-  rating_ambiance: number;
-  dishes_ordered?: string;
-  cost?: number;
-}
-
-export interface CreateHomeMealData {
-  name: string;
-  experience_date: string;
-  notes?: string;
-  tags?: string[];
-  recipe_name?: string;
-  ingredients?: string[];
-  instructions?: string;
-  cook_time_minutes?: number;
-  difficulty?: Difficulty;
-  servings?: number;
-  rating: number;
-  source?: string;
-}
-
-export interface CreateWishlistData {
-  name: string;
-  notes?: string;
-  tags?: string[];
-  wishlist_type: WishlistType;
-  source?: string;
-  url?: string;
-  priority?: Priority;
-}
-
-// Filter options
-export interface FilterOptions {
-  type?: ExperienceType | 'all';
-  search?: string;
-  tags?: string[];
-  dateFrom?: string;
-  dateTo?: string;
-  favoriteOnly?: boolean;
+  id: string
+  visit_id: string
+  storage_path: string
+  is_featured: boolean
+  sort_order: number
+  created_at: string
 }

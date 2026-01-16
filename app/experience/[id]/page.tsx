@@ -3,16 +3,31 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Edit2, Trash2, Star, MapPin, Globe, DollarSign, Clock, Users, ChefHat, UtensilsCrossed } from 'lucide-react'
+import { ArrowLeft, Edit2, Trash2, Star, MapPin, Globe, DollarSign, Clock, Users, ChefHat, UtensilsCrossed, Coffee, Sun, Moon, Cookie } from 'lucide-react'
 import PhotoViewer from '@/components/photo-viewer'
 import ConvertWishlistModal from '@/components/convert-wishlist-modal'
+
+const getMealTimeIcon = (mealTime: string | null) => {
+  switch (mealTime) {
+    case 'breakfast': return <Coffee className="w-4 h-4" />
+    case 'lunch': return <Sun className="w-4 h-4" />
+    case 'dinner': return <Moon className="w-4 h-4" />
+    case 'snack': return <Cookie className="w-4 h-4" />
+    default: return null
+  }
+}
+
+const getMealTimeLabel = (mealTime: string | null) => {
+  if (!mealTime) return null
+  return mealTime.charAt(0).toUpperCase() + mealTime.slice(1)
+}
 
 export default function ExperienceDetailPage() {
   const router = useRouter()
   const params = useParams()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
-  const [experience, setExperience] = useState<any>(null)
+  const [visit, setVisit] = useState<any>(null)
   const [photos, setPhotos] = useState<any[]>([])
   const [deleting, setDeleting] = useState(false)
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false)
@@ -20,18 +35,25 @@ export default function ExperienceDetailPage() {
   const [showConvertModal, setShowConvertModal] = useState(false)
 
   useEffect(() => {
-    loadExperience()
+    loadVisit()
   }, [])
 
-  async function loadExperience() {
+  async function loadVisit() {
     const { data } = await supabase
-      .from('experiences')
-      .select(`*, restaurant_details(*), home_meal_details(*), wishlist_details(*), photos(*)`)
+      .from('visits')
+      .select(`
+        *,
+        place:places(*),
+        restaurant_visit_details(*),
+        home_meal_details(*),
+        wishlist_details(*),
+        photos(*)
+      `)
       .eq('id', params.id)
       .single()
 
     if (data) {
-      setExperience(data)
+      setVisit(data)
       if (data.photos?.length > 0) {
         const sortedPhotos = data.photos.sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
         const photosWithUrls = sortedPhotos.map((photo: any) => ({
@@ -53,7 +75,7 @@ export default function ExperienceDetailPage() {
   }
 
   async function handleDelete() {
-    const typeLabel = experience.type === 'restaurant' ? 'restaurant' : experience.type === 'home_meal' ? 'home meal' : 'wishlist item'
+    const typeLabel = visit.type === 'restaurant' ? 'restaurant visit' : visit.type === 'home_meal' ? 'home meal' : 'wishlist item'
     if (!confirm(`Delete this ${typeLabel}? This cannot be undone.`)) return
     
     setDeleting(true)
@@ -63,7 +85,7 @@ export default function ExperienceDetailPage() {
           await supabase.storage.from('experience-photos').remove([photo.storage_path])
         }
       }
-      await supabase.from('experiences').delete().eq('id', params.id)
+      await supabase.from('visits').delete().eq('id', params.id)
       window.location.href = '/'
     } catch (err) {
       alert('Failed to delete')
@@ -72,9 +94,9 @@ export default function ExperienceDetailPage() {
   }
 
   function handleEdit() {
-    const editPath = experience.type === 'home_meal' 
+    const editPath = visit.type === 'home_meal' 
       ? `/edit/home-meal/${params.id}` 
-      : experience.type === 'wishlist'
+      : visit.type === 'wishlist'
       ? `/edit/wishlist/${params.id}`
       : `/edit/restaurant/${params.id}`
     window.location.href = editPath
@@ -89,20 +111,22 @@ export default function ExperienceDetailPage() {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>
   }
 
-  if (!experience) {
+  if (!visit) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Not found</div>
   }
 
-  const details = experience.type === 'restaurant' 
-    ? experience.restaurant_details 
-    : experience.type === 'home_meal'
-    ? experience.home_meal_details
-    : experience.wishlist_details
+  const details = visit.type === 'restaurant' 
+    ? visit.restaurant_visit_details 
+    : visit.type === 'home_meal'
+    ? visit.home_meal_details
+    : visit.wishlist_details
 
   const featuredPhoto = photos.find(p => p.is_featured) || photos[0]
   const avgRating = details?.brett_rating && details?.jean_rating 
     ? ((details.brett_rating + details.jean_rating) / 2).toFixed(1)
     : details?.brett_rating || details?.jean_rating || null
+
+  const displayName = visit.place?.name || visit.name
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,7 +137,7 @@ export default function ExperienceDetailPage() {
             <span>Back</span>
           </button>
           <div className="flex gap-2">
-            {experience.type === 'wishlist' && (
+            {visit.type === 'wishlist' && (
               <button 
                 onClick={() => setShowConvertModal(true)} 
                 className="flex items-center gap-2 px-4 py-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-600"
@@ -140,7 +164,7 @@ export default function ExperienceDetailPage() {
             className="mb-6 rounded-xl overflow-hidden cursor-pointer group relative"
             onClick={() => openPhotoViewer(0)}
           >
-            <img src={featuredPhoto.url} alt={experience.name} className="w-full h-96 object-cover transition-transform group-hover:scale-105" />
+            <img src={featuredPhoto.url} alt={displayName} className="w-full h-96 object-cover transition-transform group-hover:scale-105" />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
               <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 px-4 py-2 rounded-lg text-sm font-medium">
                 Click to view full size
@@ -151,13 +175,24 @@ export default function ExperienceDetailPage() {
 
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <div className="flex items-start justify-between mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{experience.name}</h1>
-              <p className="text-gray-600">
-                {experience.experience_date 
-                  ? new Date(experience.experience_date).toLocaleDateString()
-                  : 'On wishlist'}
-              </p>
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{displayName}</h1>
+              <div className="flex items-center gap-2 text-gray-600">
+                <span>
+                  {visit.visit_date 
+                    ? new Date(visit.visit_date).toLocaleDateString()
+                    : 'On wishlist'}
+                </span>
+                {visit.meal_time && (
+                  <>
+                    <span>•</span>
+                    <div className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-sm">
+                      {getMealTimeIcon(visit.meal_time)}
+                      <span>{getMealTimeLabel(visit.meal_time)}</span>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             {avgRating && (
               <div className="flex items-center gap-2 bg-yellow-50 px-4 py-2 rounded-lg">
@@ -168,19 +203,19 @@ export default function ExperienceDetailPage() {
           </div>
 
           {/* Restaurant-specific fields */}
-          {experience.type === 'restaurant' && details && (
+          {visit.type === 'restaurant' && details && (
             <>
               <div className="grid md:grid-cols-2 gap-4 mb-6">
-                {details.cuisine && (
+                {visit.place?.cuisine && (
                   <div className="flex items-center gap-2 text-gray-700">
                     <span className="font-medium">Cuisine:</span>
-                    <span>{details.cuisine}</span>
+                    <span>{visit.place.cuisine}</span>
                   </div>
                 )}
-                {details.price_range && (
+                {visit.place?.price_range && (
                   <div className="flex items-center gap-2 text-gray-700">
                     <DollarSign className="w-4 h-4" />
-                    <span>{details.price_range}</span>
+                    <span>{visit.place.price_range}</span>
                   </div>
                 )}
               </div>
@@ -199,24 +234,24 @@ export default function ExperienceDetailPage() {
                 </div>
               )}
 
-              {details.address && (
+              {visit.place?.address && (
                 <div className="mb-6">
                   <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
                     Address
                   </h3>
-                  <p className="text-gray-700 whitespace-pre-wrap">{details.address}</p>
+                  <p className="text-gray-700 whitespace-pre-wrap">{visit.place.address}</p>
                 </div>
               )}
 
-              {details.website && (
+              {visit.place?.website && (
                 <div className="mb-6">
                   <h3 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
                     <Globe className="w-4 h-4" />
                     Website
                   </h3>
-                  <a href={details.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                    {details.website}
+                  <a href={visit.place.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    {visit.place.website}
                   </a>
                 </div>
               )}
@@ -224,7 +259,7 @@ export default function ExperienceDetailPage() {
           )}
 
           {/* Home Meal-specific fields */}
-          {experience.type === 'home_meal' && details && (
+          {visit.type === 'home_meal' && details && (
             <>
               <div className="grid md:grid-cols-3 gap-4 mb-6">
                 {details.cuisine && (
@@ -281,7 +316,7 @@ export default function ExperienceDetailPage() {
           )}
 
           {/* Wishlist-specific fields */}
-          {experience.type === 'wishlist' && details && (
+          {visit.type === 'wishlist' && details && (
             <>
               {details.wishlist_type && (
                 <div className="mb-6">
@@ -346,7 +381,7 @@ export default function ExperienceDetailPage() {
           )}
 
           {/* Ratings (for restaurant and home_meal) */}
-          {(experience.type === 'restaurant' || experience.type === 'home_meal') && (details?.brett_rating || details?.jean_rating) && (
+          {(visit.type === 'restaurant' || visit.type === 'home_meal') && (details?.brett_rating || details?.jean_rating) && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="font-medium text-gray-900 mb-3">Ratings</h3>
               <div className="space-y-2">
@@ -376,18 +411,18 @@ export default function ExperienceDetailPage() {
             </div>
           )}
 
-          {experience.notes && (
+          {visit.notes && (
             <div className="mb-6">
               <h3 className="font-medium text-gray-900 mb-2">Notes</h3>
-              <p className="text-gray-700 whitespace-pre-wrap">{experience.notes}</p>
+              <p className="text-gray-700 whitespace-pre-wrap">{visit.notes}</p>
             </div>
           )}
 
-          {experience.tags && experience.tags.length > 0 && (
+          {visit.tags && visit.tags.length > 0 && (
             <div>
               <h3 className="font-medium text-gray-900 mb-2">Tags</h3>
               <div className="flex flex-wrap gap-2">
-                {experience.tags.map((tag: string) => (
+                {visit.tags.map((tag: string) => (
                   <span key={tag} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
                     {tag}
                   </span>
@@ -421,9 +456,9 @@ export default function ExperienceDetailPage() {
           </div>
         )}
 
-        {experience.created_by && (
+        {visit.created_by && (
           <div className="mt-6 text-center text-sm text-gray-500">
-            Added by {experience.created_by}
+            Added by {visit.created_by}
           </div>
         )}
       </main>
@@ -439,7 +474,7 @@ export default function ExperienceDetailPage() {
       {showConvertModal && (
         <ConvertWishlistModal
           wishlistId={params.id as string}
-          wishlistName={experience.name}
+          wishlistName={displayName}
           onClose={() => setShowConvertModal(false)}
         />
       )}

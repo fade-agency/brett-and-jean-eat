@@ -2,14 +2,29 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { PlusCircle, UtensilsCrossed, ChefHat, Star, LogOut, Settings, DollarSign, Search, ArrowUpDown } from 'lucide-react'
+import { PlusCircle, UtensilsCrossed, ChefHat, Star, LogOut, Settings, DollarSign, Search, ArrowUpDown, Coffee, Sun, Moon, Cookie, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { formatDistance } from 'date-fns'
 
+const getMealTimeIcon = (mealTime: string | null) => {
+  switch (mealTime) {
+    case 'breakfast': return <Coffee className="w-4 h-4" />
+    case 'lunch': return <Sun className="w-4 h-4" />
+    case 'dinner': return <Moon className="w-4 h-4" />
+    case 'snack': return <Cookie className="w-4 h-4" />
+    default: return null
+  }
+}
+
+const getMealTimeLabel = (mealTime: string | null) => {
+  if (!mealTime) return null
+  return mealTime.charAt(0).toUpperCase() + mealTime.slice(1)
+}
+
 export default function HomePage() {
-  const [experiences, setExperiences] = useState<any[]>([])
-  const [filteredExperiences, setFilteredExperiences] = useState<any[]>([])
+  const [visits, setVisits] = useState<any[]>([])
+  const [filteredVisits, setFilteredVisits] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'restaurant' | 'home_meal' | 'wishlist'>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -22,12 +37,12 @@ export default function HomePage() {
 
   useEffect(() => {
     loadUser()
-    loadExperiences()
+    loadVisits()
   }, [filter])
 
   useEffect(() => {
-    filterAndSortExperiences()
-  }, [experiences, searchQuery, sortBy])
+    filterAndSortVisits()
+  }, [visits, searchQuery, sortBy])
 
   async function loadUser() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -38,14 +53,15 @@ export default function HomePage() {
     }
   }
 
-  async function loadExperiences() {
+  async function loadVisits() {
     setLoading(true)
     
     let query = supabase
-      .from('experiences')
+      .from('visits')
       .select(`
         *,
-        restaurant_details(*),
+        place:places(*),
+        restaurant_visit_details(*),
         home_meal_details(*),
         wishlist_details(*),
         photos(*)
@@ -59,23 +75,23 @@ export default function HomePage() {
     const { data, error } = await query
 
     if (error) {
-      console.error('Error loading experiences:', error)
+      console.error('Error loading visits:', error)
     } else {
-      setExperiences(data || [])
+      setVisits(data || [])
       
       const urls: { [key: string]: string } = {}
-      for (const exp of data || []) {
-        const featuredPhoto = exp.photos?.find((p: any) => p.is_featured) || exp.photos?.[0]
+      for (const visit of data || []) {
+        const featuredPhoto = visit.photos?.find((p: any) => p.is_featured) || visit.photos?.[0]
         if (featuredPhoto) {
           const { data: urlData } = supabase.storage
             .from('experience-photos')
             .getPublicUrl(featuredPhoto.storage_path)
           
           if (urlData) {
-            urls[exp.id] = urlData.publicUrl
+            urls[visit.id] = urlData.publicUrl
           }
         } else {
-          urls[exp.id] = '/default-restaurant.svg'
+          urls[visit.id] = '/default-restaurant.svg'
         }
       }
       setPhotoUrls(urls)
@@ -84,15 +100,16 @@ export default function HomePage() {
     setLoading(false)
   }
 
-  function filterAndSortExperiences() {
-    let filtered = [...experiences]
+  function filterAndSortVisits() {
+    let filtered = [...visits]
 
     // Apply search filter
     if (searchQuery) {
-      filtered = filtered.filter(exp =>
-        exp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        exp.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        exp.tags?.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+      filtered = filtered.filter(visit =>
+        visit.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        visit.place?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        visit.notes?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        visit.tags?.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
       )
     }
 
@@ -100,7 +117,9 @@ export default function HomePage() {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'name':
-          return a.name.localeCompare(b.name)
+          const aName = a.place?.name || a.name
+          const bName = b.place?.name || b.name
+          return aName.localeCompare(bName)
         case 'rating':
           const aRating = getRatings(a)
           const bRating = getRatings(b)
@@ -109,11 +128,11 @@ export default function HomePage() {
           return bAvg - aAvg
         case 'date':
         default:
-          return new Date(b.experience_date || b.created_at).getTime() - new Date(a.experience_date || a.created_at).getTime()
+          return new Date(b.visit_date || b.created_at).getTime() - new Date(a.visit_date || a.created_at).getTime()
       }
     })
 
-    setFilteredExperiences(filtered)
+    setFilteredVisits(filtered)
   }
 
   async function handleLogout() {
@@ -148,17 +167,17 @@ export default function HomePage() {
     }
   }
 
-  const getRatings = (exp: any) => {
-    if (exp.type === 'restaurant' && exp.restaurant_details) {
+  const getRatings = (visit: any) => {
+    if (visit.type === 'restaurant' && visit.restaurant_visit_details) {
       return {
-        brett: exp.restaurant_details.brett_rating,
-        jean: exp.restaurant_details.jean_rating
+        brett: visit.restaurant_visit_details.brett_rating,
+        jean: visit.restaurant_visit_details.jean_rating
       }
     }
-    if (exp.type === 'home_meal' && exp.home_meal_details) {
+    if (visit.type === 'home_meal' && visit.home_meal_details) {
       return {
-        brett: exp.home_meal_details.brett_rating,
-        jean: exp.home_meal_details.jean_rating
+        brett: visit.home_meal_details.brett_rating,
+        jean: visit.home_meal_details.jean_rating
       }
     }
     return { brett: null, jean: null }
@@ -193,6 +212,14 @@ export default function HomePage() {
                     onClick={() => setShowMenu(false)}
                   />
                   <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-40">
+                    <Link
+                      href="/history"
+                      className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      onClick={() => setShowMenu(false)}
+                    >
+                      <Calendar className="w-4 h-4" />
+                      Food Timeline
+                    </Link>
                     <Link
                       href="/update-password"
                       className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -245,7 +272,7 @@ export default function HomePage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search experiences..."
+                placeholder="Search visits..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
@@ -271,7 +298,7 @@ export default function HomePage() {
       <main className="max-w-4xl mx-auto px-4 py-6">
         {loading ? (
           <LoadingSkeletons />
-        ) : filteredExperiences.length === 0 ? (
+        ) : filteredVisits.length === 0 ? (
           searchQuery ? (
             <div className="text-center py-16">
               <Search className="w-16 h-16 mx-auto text-gray-300 mb-4" />
@@ -289,15 +316,16 @@ export default function HomePage() {
           )
         ) : (
           <div className="space-y-4">
-            {filteredExperiences.map((exp: any) => {
-              const ratings = getRatings(exp)
-              const featuredPhotoUrl = photoUrls[exp.id]
-              const details = exp.type === 'restaurant' ? exp.restaurant_details : exp.home_meal_details
+            {filteredVisits.map((visit: any) => {
+              const ratings = getRatings(visit)
+              const featuredPhotoUrl = photoUrls[visit.id]
+              const details = visit.type === 'restaurant' ? visit.restaurant_visit_details : visit.home_meal_details
+              const displayName = visit.place?.name || visit.name
               
               return (
                 <Link
-                  key={exp.id}
-                  href={`/experience/${exp.id}`}
+                  key={visit.id}
+                  href={`/experience/${visit.id}`}
                   className="block bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow overflow-hidden"
                 >
                   <div className="flex">
@@ -305,7 +333,7 @@ export default function HomePage() {
                       <div className="w-32 h-32 flex-shrink-0">
                         <img
                           src={featuredPhotoUrl}
-                          alt={exp.name}
+                          alt={displayName}
                           className="w-full h-full object-cover"
                         />
                       </div>
@@ -314,28 +342,34 @@ export default function HomePage() {
                     <div className="flex-1 p-4">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center gap-2 flex-1">
-                          {getTypeIcon(exp.type)}
-                          <h3 className="font-semibold text-lg">{exp.name}</h3>
+                          {getTypeIcon(visit.type)}
+                          <h3 className="font-semibold text-lg">{displayName}</h3>
+                          {visit.meal_time && (
+                            <span className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded-full text-xs text-gray-600">
+                              {getMealTimeIcon(visit.meal_time)}
+                              {getMealTimeLabel(visit.meal_time)}
+                            </span>
+                          )}
                         </div>
-                        {exp.is_favorite && (
+                        {visit.is_favorite && (
                           <Star className="w-5 h-5 fill-yellow-400 text-yellow-400 flex-shrink-0" />
                         )}
                       </div>
                       
                       <div className="text-sm text-gray-600 mb-2">
-                        {exp.experience_date ? (
-                          <span>{new Date(exp.experience_date).toLocaleDateString()}</span>
+                        {visit.visit_date ? (
+                          <span>{new Date(visit.visit_date).toLocaleDateString()}</span>
                         ) : (
                           <span className="text-gray-400">On wishlist</span>
                         )}
                         {' · '}
                         <span className="text-gray-400">
-                          {formatDistance(new Date(exp.created_at), new Date(), { addSuffix: true })}
+                          {formatDistance(new Date(visit.created_at), new Date(), { addSuffix: true })}
                         </span>
-                        {exp.created_by && (
+                        {visit.created_by && (
                           <>
                             {' · '}
-                            <span className="text-gray-500">by {exp.created_by}</span>
+                            <span className="text-gray-500">by {visit.created_by}</span>
                           </>
                         )}
                       </div>
@@ -357,36 +391,34 @@ export default function HomePage() {
                         </div>
                       )}
 
-                      {details && (
+                      {(visit.place?.cuisine || details?.cuisine) && (
                         <div className="flex items-center gap-3 text-sm text-gray-600 mb-2">
-                          {details.cuisine && (
-                            <span className="px-2 py-1 bg-gray-100 rounded text-xs">
-                              {details.cuisine}
-                            </span>
-                          )}
-                          {details.price_range && (
+                          <span className="px-2 py-1 bg-gray-100 rounded text-xs">
+                            {visit.place?.cuisine || details?.cuisine}
+                          </span>
+                          {visit.place?.price_range && (
                             <div className="flex items-center gap-1">
                               <DollarSign className="w-3 h-3" />
-                              <span className="text-xs">{details.price_range}</span>
+                              <span className="text-xs">{visit.place.price_range}</span>
                             </div>
                           )}
                         </div>
                       )}
 
-                      {exp.notes && (
-                        <p className="text-gray-700 text-sm line-clamp-2 mb-2">{exp.notes}</p>
+                      {visit.notes && (
+                        <p className="text-gray-700 text-sm line-clamp-2 mb-2">{visit.notes}</p>
                       )}
 
-                      {exp.tags && exp.tags.length > 0 && (
+                      {visit.tags && visit.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
-                          {exp.tags.slice(0, 3).map((tag: string) => (
+                          {visit.tags.slice(0, 3).map((tag: string) => (
                             <span key={tag} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
                               {tag}
                             </span>
                           ))}
-                          {exp.tags.length > 3 && (
+                          {visit.tags.length > 3 && (
                             <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">
-                              +{exp.tags.length - 3} more
+                              +{visit.tags.length - 3} more
                             </span>
                           )}
                         </div>
@@ -438,13 +470,13 @@ function EmptyState({ filter }: { filter: string }) {
   const messages = {
     all: {
       icon: UtensilsCrossed,
-      title: "No experiences yet",
+      title: "No visits yet",
       subtitle: "Start tracking your food journey!",
     },
     restaurant: {
       icon: UtensilsCrossed,
       title: "No restaurants yet",
-      subtitle: "Add your first restaurant experience!",
+      subtitle: "Add your first restaurant visit!",
     },
     home_meal: {
       icon: ChefHat,
@@ -473,7 +505,7 @@ function EmptyState({ filter }: { filter: string }) {
         className="inline-flex items-center gap-2 bg-red-500 text-white px-6 py-3 rounded-lg font-medium hover:bg-red-600 transition-colors shadow-lg"
       >
         <PlusCircle className="w-5 h-5" />
-        <span>Add Experience</span>
+        <span>Add Visit</span>
       </Link>
     </div>
   )
