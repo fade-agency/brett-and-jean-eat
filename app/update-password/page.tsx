@@ -18,17 +18,14 @@ export default function UpdatePasswordPage() {
   const [verifying, setVerifying] = useState(true)
 
   useEffect(() => {
-    // Verify the recovery session
     verifyRecoverySession()
   }, [])
 
   async function verifyRecoverySession() {
     try {
-      // Check if we have a valid session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
       if (sessionError || !session) {
-        // Try to get session from hash params (for email links)
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
         const accessToken = hashParams.get('access_token')
         const refreshToken = hashParams.get('refresh_token')
@@ -84,7 +81,6 @@ export default function UpdatePasswordPage() {
 
       setSuccess(true)
       
-      // Redirect to home after 2 seconds
       setTimeout(() => {
         router.push('/')
         router.refresh()
