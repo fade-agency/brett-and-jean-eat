@@ -1,6 +1,7 @@
 // types/index.ts
 // Type definitions for Brett & Jean Eat
 
+export type Cuisine = string;
 export type ExperienceType = 'restaurant' | 'home_meal' | 'wishlist';
 export type PriceRange = '$' | '$$' | '$$$' | '$$$$';
 export type Difficulty = 'easy' | 'medium' | 'hard';
