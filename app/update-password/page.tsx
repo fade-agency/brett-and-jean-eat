@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -15,19 +16,47 @@ export default function UpdatePasswordPage() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [isResettingPassword, setIsResettingPassword] = useState(false)
+  const [verifying, setVerifying] = useState(true)
 
   useEffect(() => {
-    // Check if this is a password reset flow (has recovery token)
-    checkSession()
+    // Verify the recovery session
+    verifyRecoverySession()
   }, [])
 
-  async function checkSession() {
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    // If there's a session and it's from a recovery link, we're in reset mode
-    if (session) {
-      setIsResettingPassword(true)
+  async function verifyRecoverySession() {
+    try {
+      // Check if we have a valid session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError || !session) {
+        // Try to get session from hash params (for email links)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const accessToken = hashParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token')
+        
+        if (accessToken && refreshToken) {
+          const { error: setSessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          })
+          
+          if (setSessionError) {
+            setError('Invalid or expired reset link. Please request a new one.')
+            setVerifying(false)
+            return
+          }
+        } else {
+          setError('Invalid or expired reset link. Please request a new one.')
+          setVerifying(false)
+          return
+        }
+      }
+      
+      setVerifying(false)
+    } catch (err) {
+      console.error('Session verification error:', err)
+      setError('Something went wrong. Please request a new reset link.')
+      setVerifying(false)
     }
   }
 
@@ -63,9 +92,21 @@ export default function UpdatePasswordPage() {
       }, 2000)
 
     } catch (err: any) {
+      console.error('Password update error:', err)
       setError(err.message || 'Failed to update password')
       setLoading(false)
     }
+  }
+
+  if (verifying) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-sm p-8 max-w-md w-full text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Verifying reset link...</p>
+        </div>
+      </div>
+    )
   }
 
   if (success) {
@@ -93,19 +134,20 @@ export default function UpdatePasswordPage() {
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Home</span>
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {isResettingPassword ? 'Reset Your Password' : 'Update Password'}
-          </h1>
-          <p className="text-gray-600 mt-2">
-            {isResettingPassword 
-              ? 'Enter your new password below' 
-              : 'Change your account password'}
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Reset Your Password</h1>
+          <p className="text-gray-600 mt-2">Enter your new password below</p>
         </div>
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
             {error}
+            {error.includes('Invalid or expired') && (
+              <div className="mt-2">
+                <Link href="/reset-password" className="text-red-600 underline font-medium">
+                  Request a new reset link
+                </Link>
+              </div>
+            )}
           </div>
         )}
 
